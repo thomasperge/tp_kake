@@ -1,238 +1,251 @@
-# Diagramme de Séquence - Parcours d'une Commande
+# 🛒 Diagramme de Séquence - Parcours d'une Commande
 
 Ce diagramme illustre le flux complet d'une commande depuis l'ajout au panier jusqu'à la notification, incluant les interactions entre tous les microservices.
 
-## 1. Ajout au Panier et Application de Réduction
+## 🛍️ ÉTAPE 1 : Consultation du Catalogue et Ajout au Panier
 
 ```mermaid
 sequenceDiagram
-    actor Client
-    participant Gateway as API Gateway
-    participant Auth as Identity Service
-    participant Catalog as Catalog.API
-    participant Basket as Basket.API
-    participant Discount as Discount.API
-    participant Redis as Redis Cache
+    actor Client as 👤 Client
+    participant Gateway as 🚪 Passerelle API
+    participant Auth as 🔐 Service Authentification
+    participant Catalog as 🛍️ Service Catalogue
+    participant Basket as 🛒 Service Panier
+    participant Discount as 🎟️ Service Réductions
+    participant Redis as ⚡ Cache Redis
     
-    Client->>Gateway: GET /catalog/products
-    Gateway->>Catalog: Forward request
-    Catalog->>Catalog: Query products
-    Catalog-->>Gateway: Return product list
-    Gateway-->>Client: Display products
+    Note over Client,Redis: 📋 ÉTAPE 1A : Consultation du catalogue
     
-    Client->>Gateway: POST /basket/add-item
-    Gateway->>Auth: Validate JWT Token
-    Auth-->>Gateway: Token valid + UserId
+    Client->>Gateway: 🔍 GET /catalog/products<br/>"Montre-moi les produits"
+    Gateway->>Catalog: ➡️ Transfère la requête
+    Catalog->>Catalog: 🔎 Recherche dans la base de données
+    Catalog-->>Gateway: 📦 Liste des produits disponibles
+    Gateway-->>Client: ✅ Affichage des produits
     
-    Gateway->>Basket: Add item to basket (UserId, ProductId, Quantity)
-    Basket->>Catalog: GET /products/{id} (verify product exists & price)
-    Catalog-->>Basket: Product details
+    Note over Client,Redis: 📋 ÉTAPE 1B : Ajout d'un produit au panier
     
-    Basket->>Redis: Get cached basket
-    alt Basket exists in cache
-        Redis-->>Basket: Return basket
-    else Basket not in cache
-        Basket->>Basket: Create new basket
+    Client->>Gateway: 🛒 POST /basket/add-item<br/>"Ajoute ce produit à mon panier"
+    Gateway->>Auth: 🔑 Vérification du token JWT
+    Auth-->>Gateway: ✅ Token valide + ID utilisateur
+    
+    Gateway->>Basket: 📝 Ajouter au panier (ID utilisateur, ID produit, Quantité)
+    Basket->>Catalog: 🔍 GET /products/{id}<br/>"Ce produit existe-t-il ? Quel est son prix ?"
+    Catalog-->>Basket: 💰 Détails du produit (prix, nom, disponibilité)
+    
+    Basket->>Redis: 🔍 Récupérer le panier en cache
+    alt Panier existe dans le cache
+        Redis-->>Basket: 📦 Retourne le panier existant
+    else Panier n'existe pas
+        Basket->>Basket: 🆕 Créer un nouveau panier
     end
     
-    Basket->>Basket: Add/Update item in basket
-    Basket->>Redis: Update cached basket
-    Basket-->>Gateway: Basket updated
-    Gateway-->>Client: Item added successfully
+    Basket->>Basket: ➕ Ajouter/Mettre à jour l'article dans le panier
+    Basket->>Redis: 💾 Mettre à jour le panier en cache
+    Basket-->>Gateway: ✅ Panier mis à jour
+    Gateway-->>Client: 🎉 "Produit ajouté avec succès !"
     
-    Note over Client,Discount: Application d'un code de réduction
+    Note over Client,Discount: 📋 ÉTAPE 1C : Application d'un code de réduction
     
-    Client->>Gateway: POST /basket/apply-coupon {couponCode}
-    Gateway->>Auth: Validate token
-    Auth-->>Gateway: Valid
+    Client->>Gateway: 🎟️ POST /basket/apply-coupon {couponCode}<br/>"Applique le code NOEL2025"
+    Gateway->>Auth: 🔑 Vérification du token
+    Auth-->>Gateway: ✅ Token valide
     
-    Gateway->>Basket: Apply coupon request
-    Basket->>Discount: gRPC GetDiscount(ProductId, CouponCode)
-    Discount->>Discount: Validate coupon
-    Discount-->>Basket: Discount amount/percentage
+    Gateway->>Basket: 🎫 Demande d'application du coupon
+    Basket->>Discount: 🚀 gRPC GetDiscount(ProductId, CouponCode)<br/>"Ce code est-il valide ?"
+    Discount->>Discount: 🔍 Vérification du coupon
+    Discount-->>Basket: 💰 Montant de la réduction (ex: -20%)
     
-    Basket->>Basket: Recalculate totals with discount
-    Basket->>Redis: Update basket
-    Basket-->>Gateway: Updated basket with discount
-    Gateway-->>Client: Discount applied
+    Basket->>Basket: 🧮 Recalculer les totaux avec la réduction
+    Basket->>Redis: 💾 Mettre à jour le panier
+    Basket-->>Gateway: ✅ Panier mis à jour avec réduction
+    Gateway-->>Client: 🎉 "Réduction appliquée ! Nouveau total : XX€"
 ```
 
-## 2. Passage de Commande (Checkout)
+## 💳 ÉTAPE 2 : Passage de Commande (Checkout)
 
 ```mermaid
 sequenceDiagram
-    actor Client
-    participant Gateway as API Gateway
-    participant Auth as Identity Service
-    participant Basket as Basket.API
-    participant RabbitMQ as RabbitMQ
-    participant Ordering as Ordering.API
-    participant DB as SQL Server
+    actor Client as 👤 Client
+    participant Gateway as 🚪 Passerelle API
+    participant Auth as 🔐 Service Authentification
+    participant Basket as 🛒 Service Panier
+    participant RabbitMQ as 📨 Bus de Messages
+    participant Ordering as 📦 Service Commandes
+    participant DB as 🗄️ Base SQL Server
     
-    Client->>Gateway: POST /basket/checkout
-    Note over Client: Avec adresse livraison,<br/>infos paiement, etc.
+    Note over Client,DB: 📋 ÉTAPE 2A : Validation de la commande
     
-    Gateway->>Auth: Validate JWT Token
-    Auth-->>Gateway: Valid + UserId
+    Client->>Gateway: 💳 POST /basket/checkout<br/>"Je valide ma commande"
+    Note over Client: 📝 Avec adresse de livraison,<br/>informations de paiement, etc.
     
-    Gateway->>Basket: Checkout basket (UserId)
-    Basket->>Basket: Get basket from Redis
-    Basket->>Basket: Validate basket (items exist, stock available)
+    Gateway->>Auth: 🔑 Vérification du token JWT
+    Auth-->>Gateway: ✅ Token valide + ID utilisateur
     
-    alt Basket valid
-        Basket->>Basket: Create BasketCheckoutEvent
-        Note over Basket: Event contains:<br/>- UserId<br/>- Items + Quantities + Prices<br/>- TotalPrice<br/>- Applied discount<br/>- Delivery address<br/>- Payment info
+    Gateway->>Basket: 🛒 Validation du panier (ID utilisateur)
+    Basket->>Basket: 🔍 Récupérer le panier depuis Redis
+    Basket->>Basket: ✅ Vérifier le panier (articles existent, stock disponible)
+    
+    alt Panier valide
+        Note over Client,DB: 📋 ÉTAPE 2B : Création de la commande
         
-        Basket->>RabbitMQ: Publish BasketCheckoutEvent
-        Basket-->>Gateway: Checkout initiated
-        Gateway-->>Client: Order processing...
+        Basket->>Basket: 📝 Créer l'événement BasketCheckoutEvent
+        Note over Basket: 📦 L'événement contient :<br/>- ID utilisateur<br/>- Articles + Quantités + Prix<br/>- Prix total<br/>- Réduction appliquée<br/>- Adresse de livraison<br/>- Informations de paiement
         
-        RabbitMQ->>Ordering: BasketCheckoutEvent received
+        Basket->>RabbitMQ: 📤 Publier BasketCheckoutEvent<br/>"Nouveau panier à transformer en commande !"
+        Basket-->>Gateway: ✅ Commande initiée
+        Gateway-->>Client: ⏳ "Commande en cours de traitement..."
         
-        Note over Ordering: Event Handler<br/>(Asynchronous)
+        RabbitMQ->>Ordering: 📨 BasketCheckoutEvent reçu
         
-        Ordering->>Ordering: Create Order (DDD Aggregate)
-        Note over Ordering: Apply business rules:<br/>- Validate total<br/>- Check inventory<br/>- Create Order entity
+        Note over Ordering: 🔄 Gestionnaire d'événements<br/>(Traitement asynchrone)
         
-        Ordering->>DB: BEGIN TRANSACTION
-        Ordering->>DB: INSERT Order
-        Ordering->>DB: INSERT OrderItems
-        Ordering->>DB: COMMIT TRANSACTION
+        Ordering->>Ordering: 🏗️ Créer la commande (Agrégat DDD)
+        Note over Ordering: 📋 Appliquer les règles métier :<br/>- Valider le total<br/>- Vérifier l'inventaire<br/>- Créer l'entité Commande
         
-        Ordering->>Ordering: Create OrderCreatedEvent
-        Ordering->>RabbitMQ: Publish OrderCreatedEvent
+        Ordering->>DB: 🔄 DÉBUT TRANSACTION
+        Ordering->>DB: 💾 INSERT Commande
+        Ordering->>DB: 💾 INSERT Articles de la commande
+        Ordering->>DB: ✅ COMMIT TRANSACTION
         
-    else Basket invalid
-        Basket-->>Gateway: Error (item unavailable, etc.)
-        Gateway-->>Client: Checkout failed
+        Ordering->>Ordering: 📝 Créer OrderCreatedEvent
+        Ordering->>RabbitMQ: 📤 Publier OrderCreatedEvent<br/>"Commande créée ! Envoyez les notifications"
+        
+    else Panier invalide
+        Basket-->>Gateway: ❌ Erreur (article indisponible, etc.)
+        Gateway-->>Client: 💥 "Échec de la commande"
     end
 ```
 
-## 3. Notification et Suivi de Commande
+## 📧 ÉTAPE 3 : Notification et Suivi de Commande
 
 ```mermaid
 sequenceDiagram
-    actor Client
-    participant Gateway as API Gateway
-    participant RabbitMQ as RabbitMQ
-    participant Ordering as Ordering.API
-    participant Notification as Notification Service
-    participant Email as Email Provider
+    actor Client as 👤 Client
+    participant Gateway as 🚪 Passerelle API
+    participant RabbitMQ as 📨 Bus de Messages
+    participant Ordering as 📦 Service Commandes
+    participant Notification as 📧 Service Notifications
+    participant Email as 📮 Fournisseur Email
     
-    Note over RabbitMQ,Notification: Service optionnel (évolution future)
+    Note over RabbitMQ,Notification: 🔮 Service optionnel (évolution future)
     
-    RabbitMQ->>Notification: OrderCreatedEvent received
-    Notification->>Notification: Format email template
-    Notification->>Email: Send confirmation email
-    Email-->>Client: Email received
+    Note over Client,Email: 📋 ÉTAPE 3A : Notification automatique
     
-    Note over Client,Ordering: Suivi de la commande
+    RabbitMQ->>Notification: 📨 OrderCreatedEvent reçu<br/>"Une nouvelle commande a été créée !"
+    Notification->>Notification: 📝 Formater le template d'email
+    Notification->>Email: 📤 Envoyer l'email de confirmation
+    Email-->>Client: 📧 Email reçu : "Votre commande #12345 a été confirmée !"
     
-    Client->>Gateway: GET /orders/{orderId}
-    Gateway->>Ordering: Get order details
-    Ordering->>Ordering: Query order (CQRS Read Model)
-    Ordering-->>Gateway: Order details + status
-    Gateway-->>Client: Display order info
+    Note over Client,Ordering: 📋 ÉTAPE 3B : Suivi de la commande par le client
     
-    Note over Client,Ordering: Mise à jour du statut (par admin ou système)
+    Client->>Gateway: 🔍 GET /orders/{orderId}<br/>"Montre-moi le statut de ma commande"
+    Gateway->>Ordering: 📋 Récupérer les détails de la commande
+    Ordering->>Ordering: 🔎 Requête sur la commande (Modèle de lecture CQRS)
+    Ordering-->>Gateway: 📊 Détails de la commande + statut
+    Gateway-->>Client: 📱 Affichage des informations de commande
     
-    Ordering->>Ordering: Update order status
-    Note over Ordering: Status changes:<br/>- Pending<br/>- Confirmed<br/>- Shipped<br/>- Delivered<br/>- Cancelled
+    Note over Client,Ordering: 📋 ÉTAPE 3C : Mise à jour du statut (par admin ou système)
     
-    Ordering->>RabbitMQ: Publish OrderUpdatedEvent
-    RabbitMQ->>Notification: OrderUpdatedEvent received
-    Notification->>Email: Send status update email
-    Email-->>Client: Email received
+    Ordering->>Ordering: 🔄 Mettre à jour le statut de la commande
+    Note over Ordering: 📈 Changements de statut :<br/>- ⏳ En attente<br/>- ✅ Confirmée<br/>- 🚚 Expédiée<br/>- 📦 Livrée<br/>- ❌ Annulée
     
-    Client->>Gateway: GET /orders/my-orders
-    Gateway->>Ordering: Get user orders
-    Ordering-->>Gateway: List of orders
-    Gateway-->>Client: Display order history
+    Ordering->>RabbitMQ: 📤 Publier OrderUpdatedEvent<br/>"Le statut de la commande a changé !"
+    RabbitMQ->>Notification: 📨 OrderUpdatedEvent reçu
+    Notification->>Email: 📤 Envoyer l'email de mise à jour
+    Email-->>Client: 📧 Email reçu : "Votre commande #12345 a été expédiée !"
+    
+    Client->>Gateway: 📋 GET /orders/my-orders<br/>"Montre-moi toutes mes commandes"
+    Gateway->>Ordering: 📊 Récupérer les commandes de l'utilisateur
+    Ordering-->>Gateway: 📝 Liste des commandes
+    Gateway-->>Client: 📱 Affichage de l'historique des commandes
 ```
 
-## Description des Flux
+## 📋 Description des Flux
 
-### Flux 1 : Ajout au Panier et Application de Réduction
+### 🛍️ Flux 1 : Consultation du Catalogue et Ajout au Panier
 
 **Étapes clés :**
 
-1. **Consultation du catalogue** : Le client parcourt les produits via Catalog.API
-2. **Authentification** : L'API Gateway valide le JWT token via Identity Service
-3. **Ajout au panier** : 
-   - Basket.API vérifie le produit auprès de Catalog.API
-   - Récupère ou crée le panier depuis Redis (cache)
-   - Ajoute l'item et met à jour le cache
-4. **Application coupon** :
-   - Communication gRPC synchrone avec Discount.API
-   - Validation du coupon et récupération du montant
-   - Recalcul des totaux avec réduction
+1. **🔍 Consultation du catalogue** : Le client parcourt les produits via le Service Catalogue
+2. **🔑 Authentification** : La Passerelle API valide le token JWT via le Service Authentification
+3. **🛒 Ajout au panier** : 
+   - Le Service Panier vérifie le produit auprès du Service Catalogue
+   - Récupère ou crée le panier depuis Redis (cache super rapide)
+   - Ajoute l'article et met à jour le cache
+4. **🎟️ Application coupon** :
+   - Communication gRPC synchrone avec le Service Réductions
+   - Validation du coupon et récupération du montant de réduction
+   - Recalcul des totaux avec la réduction appliquée
 
-**Pattern utilisé :** Cache-Aside Pattern avec Redis
+**Pattern utilisé :** Cache-Aside Pattern avec Redis ⚡
 
-### Flux 2 : Passage de Commande (Checkout)
+### 💳 Flux 2 : Passage de Commande (Checkout)
 
 **Étapes clés :**
 
-1. **Validation du panier** : Vérification des items, stock, prix
-2. **Publication événement** : BasketCheckoutEvent publié vers RabbitMQ
-3. **Traitement asynchrone** :
-   - Ordering.API souscrit à l'événement
+1. **✅ Validation du panier** : Vérification des articles, stock disponible, prix
+2. **📤 Publication événement** : BasketCheckoutEvent publié vers RabbitMQ
+3. **🔄 Traitement asynchrone** :
+   - Le Service Commandes souscrit à l'événement
    - Crée la commande avec les règles métier (DDD)
-   - Persiste dans SQL Server avec transaction
-4. **Notification** : OrderCreatedEvent publié pour autres services
+   - Sauvegarde dans SQL Server avec transaction sécurisée
+4. **📧 Notification** : OrderCreatedEvent publié pour les autres services
 
 **Patterns utilisés :** 
-- Event-Driven Architecture
-- Saga Pattern (implicite)
-- CQRS (Command pour créer la commande)
+- 🏗️ Event-Driven Architecture
+- 📋 Saga Pattern (implicite)
+- 🔄 CQRS (Command pour créer la commande)
 
-### Flux 3 : Notification et Suivi
+### 📧 Flux 3 : Notification et Suivi
 
 **Étapes clés :**
 
-1. **Notification automatique** : Service abonné aux événements envoie des emails
-2. **Consultation commande** : CQRS Read Model pour requêtes optimisées
-3. **Mise à jour statut** : Événements OrderUpdatedEvent pour communication asynchrone
-4. **Historique** : Client peut consulter toutes ses commandes
+1. **📨 Notification automatique** : Service abonné aux événements envoie des emails
+2. **🔍 Consultation commande** : CQRS Read Model pour requêtes optimisées
+3. **🔄 Mise à jour statut** : Événements OrderUpdatedEvent pour communication asynchrone
+4. **📋 Historique** : Le client peut consulter toutes ses commandes
 
 **Patterns utilisés :**
-- Observer Pattern (via RabbitMQ)
-- CQRS (Read Model optimisé pour les requêtes)
+- 👀 Observer Pattern (via RabbitMQ)
+- 🔄 CQRS (Read Model optimisé pour les requêtes)
 
-## Avantages de cette Architecture
+## 🏗️ Avantages de cette Architecture
 
-### Résilience
-- Si Ordering.API est down, le BasketCheckoutEvent reste dans RabbitMQ et sera traité plus tard
+### 🛡️ Résilience
+- Si le Service Commandes est en panne, le BasketCheckoutEvent reste dans RabbitMQ et sera traité plus tard
 - Les services sont découplés grâce à la communication asynchrone
+- Un service en panne n'empêche pas les autres de fonctionner
 
-### Performance
-- Redis cache pour accès rapide aux paniers
-- gRPC pour communication haute performance (Discount)
-- CQRS pour séparer lecture/écriture
+### ⚡ Performance
+- Redis cache pour accès ultra-rapide aux paniers
+- gRPC pour communication haute performance (Service Réductions)
+- CQRS pour séparer lecture/écriture et optimiser les performances
 
-### Scalabilité
-- Chaque service peut être scalé indépendamment
-- RabbitMQ gère la charge avec des queues
+### 📈 Scalabilité
+- Chaque service peut être scalé indépendamment selon ses besoins
+- RabbitMQ gère la charge avec des queues intelligentes
+- Possibilité d'ajouter des instances de services selon la demande
 
-### Observabilité
-- Chaque interaction est traçable
-- Logs centralisés permettent de suivre le parcours complet
+### 🔍 Observabilité
+- Chaque interaction est traçable et loggée
+- Logs centralisés permettent de suivre le parcours complet d'une commande
+- Monitoring en temps réel de tous les services
 
-## Gestion des Erreurs
+## 🚨 Gestion des Erreurs
 
 | Scénario | Gestion |
 |----------|---------|
-| **Produit inexistant** | Basket.API vérifie avec Catalog avant ajout, retourne erreur 404 |
-| **Coupon invalide** | Discount.API retourne discount = 0, le panier n'est pas modifié |
-| **Service down** | API Gateway retourne erreur 503, client réessaie plus tard |
-| **Événement perdu** | RabbitMQ garantit la livraison (persistent messages) |
-| **Transaction échouée** | Rollback automatique de la transaction SQL Server |
+| **❌ Produit inexistant** | Le Service Panier vérifie avec le Service Catalogue avant ajout, retourne erreur 404 |
+| **❌ Coupon invalide** | Le Service Réductions retourne réduction = 0, le panier n'est pas modifié |
+| **❌ Service en panne** | La Passerelle API retourne erreur 503, le client peut réessayer plus tard |
+| **❌ Événement perdu** | RabbitMQ garantit la livraison (messages persistants) |
+| **❌ Transaction échouée** | Rollback automatique de la transaction SQL Server |
 
-## Communication
+## 📡 Types de Communication
 
 | Type | Usage | Avantages | Inconvénients |
 |------|-------|-----------|---------------|
-| **REST API** | Gateway ↔ Services, Services ↔ Services | Standard, facile à déboguer | Plus lent que gRPC |
-| **gRPC** | Basket → Discount | Haute performance, typage fort | Plus complexe |
-| **RabbitMQ** | Événements asynchrones | Découplage, résilience | Complexité, eventual consistency |
+| **🌐 REST API** | Passerelle ↔ Services, Services ↔ Services | Standard, facile à déboguer | Plus lent que gRPC |
+| **🚀 gRPC** | Panier → Réductions | Haute performance, typage fort | Plus complexe à implémenter |
+| **📨 RabbitMQ** | Événements asynchrones | Découplage, résilience | Complexité, eventual consistency |
 
