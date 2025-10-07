@@ -6,44 +6,37 @@ Ce diagramme montre comment les différents services de la plateforme e-commerce
 
 ```mermaid
 graph TB
-    subgraph "Couche Client"
-        WEB[Site Web]
-        MOBILE[Application Mobile]
+    subgraph "Applications Client"
+        WEB[WebApp<br/>Interface web clients]
+        MOBILE[Mobile App<br/>Application mobile]
     end
     
-    subgraph "Porte d'Entrée"
-        GATEWAY[Passerelle API<br/>Point d'entrée unique]
+    subgraph "API Gateway"
+        GATEWAY[Ocelot API Gateway<br/>Point d'entrée unique<br/>Routage & Sécurité]
     end
     
-    subgraph "Services Métier"
-        subgraph "Service Catalogue"
-            CATALOG[Gestion des Produits<br/>ASP.NET Core]
-            CATALOGDB[(Base de données<br/>PostgreSQL<br/>Produits)]
-        end
-        
-        subgraph "Service Panier"
-            BASKET[Gestion des Paniers<br/>ASP.NET Core]
-            BASKETDB[(Base de données<br/>PostgreSQL<br/>Paniers)]
-            REDIS[(Cache Rapide<br/>Redis<br/>Sessions)]
-        end
-        
-        subgraph "Service Réductions"
-            DISCOUNT[Gestion des Coupons<br/>ASP.NET Core]
-            DISCOUNTDB[(Base de données<br/>SQLite<br/>Coupons)]
-        end
-        
-        subgraph "Service Commandes"
-            ORDERING[Gestion des Commandes<br/>ASP.NET Core]
-            ORDERINGDB[(Base de données<br/>SQL Server<br/>Commandes)]
-        end
+    subgraph "Microservices"
+        CATALOG[Catalog.API<br/>Gestion des produits<br/>Recherche & Filtrage]
+        BASKET[Basket.API<br/>Gestion des paniers<br/>Calcul des totaux]
+        DISCOUNT[Discount.API<br/>Gestion des coupons<br/>Validation codes promo]
+        ORDERING[Ordering.API<br/>Gestion des commandes<br/>Suivi des statuts]
     end
     
-    subgraph "Communication entre Services"
-        RABBITMQ[Bus de Messages<br/>RabbitMQ<br/>Messages asynchrones]
+    subgraph "Bases de Données"
+        CATALOGDB[(MongoDB<br/>Produits<br/>Stockage produits)]
+        BASKETDB[(PostgreSQL<br/>Paniers<br/>Sauvegarde paniers)]
+        REDIS[(Redis<br/>Cache<br/>Sessions rapides)]
+        DISCOUNTDB[(SQLite<br/>Coupons<br/>Codes de réduction)]
+        ORDERINGDB[(SQL Server<br/>Commandes<br/>Transactions sécurisées)]
+    end
+    
+    subgraph "Communication"
+        RABBITMQ[RabbitMQ<br/>Message Broker<br/>Événements asynchrones]
+        GRPC[gRPC<br/>Communication<br/>]
     end
     
     subgraph "Services Partagés"
-        AUTH[Service d'Authentification<br/>Connexion utilisateurs]
+        AUTH[Identity Service<br/>Authentification<br/>Gestion des utilisateurs]
     end
     
     WEB --> GATEWAY
@@ -55,17 +48,14 @@ graph TB
     GATEWAY --> AUTH
     
     CATALOG --> CATALOGDB
-    
     BASKET --> BASKETDB
     BASKET --> REDIS
-    BASKET -->|Appelle| DISCOUNT
-    
+    BASKET -->|gRPC| DISCOUNT
     DISCOUNT --> DISCOUNTDB
-    
     ORDERING --> ORDERINGDB
     
-    BASKET -->|Envoie des messages| RABBITMQ
-    ORDERING -->|Reçoit/Envoie des messages| RABBITMQ
+    BASKET --> RABBITMQ
+    ORDERING --> RABBITMQ
     
     style GATEWAY fill:#4A90E2,color:#fff
     style CATALOG fill:#7ED321,color:#000
@@ -73,169 +63,90 @@ graph TB
     style DISCOUNT fill:#BD10E0,color:#fff
     style ORDERING fill:#50E3C2,color:#000
     style RABBITMQ fill:#FF6B6B,color:#fff
+    style GRPC fill:#9B59B6,color:#fff
     style AUTH fill:#4ECDC4,color:#000
 ```
 
-## 📋 Explication Simple de l'Architecture
+## 📋 Architecture Microservices e-Commerce
 
-### 🖥️ Ce que voit l'utilisateur
+### 🖥️ Applications Client
 
-| Composant | À quoi ça sert |
-|-----------|----------------|
-| **Site Web** | Page internet où les clients achètent (comme Amazon) |
-| **Application Mobile** | Application sur téléphone pour faire des achats |
+| Composant | Description |
+|-----------|-------------|
+| **WebApp** | Application web pour les clients |
+| **Mobile App** | Application mobile pour smartphones |
 
-### 🚪 La Porte d'Entrée Unique
+### 🚪 API Gateway
 
-| Composant | À quoi ça sert |
-|-----------|----------------|
-| **Passerelle API** | C'est la porte d'entrée unique. Toutes les requêtes passent par là avant d'aller vers les bons services. Elle vérifie aussi que l'utilisateur est bien connecté. |
+| Composant | Description |
+|-----------|-------------|
+| **Ocelot API Gateway** | Point d'entrée unique, routage et sécurité |
 
----
+### 🎯 Microservices
 
-## 🎯 Les 4 Services Principaux
+| Service | Rôle | Base de données |
+|---------|------|----------------|
+| **Catalog.API** | Gestion des produits | MongoDB |
+| **Basket.API** | Gestion des paniers | PostgreSQL + Redis |
+| **Discount.API** | Gestion des coupons | SQLite |
+| **Ordering.API** | Gestion des commandes | SQL Server |
 
-### 1️⃣ Service Catalogue 🛍️
+### 📨 Communication
 
-**Ce qu'il fait :**
-- Affiche tous les produits disponibles
-- Permet de chercher un produit
-- Montre les détails d'un produit (prix, description, photos)
-- Gère les catégories de produits
+| Composant | Rôle |
+|-----------|------|
+| **RabbitMQ** | Message Broker pour communication asynchrone |
+| **gRPC** | Communication haute performance entre services |
+| **Identity Service** | Authentification et autorisation |
 
-**Sa base de données :** PostgreSQL (pour stocker tous les produits)
+## 🔄 Flux de Communication
 
----
+### Communication Synchrone
+- **WebApp/Mobile** → **Ocelot API Gateway** → **Microservices**
+- **Basket.API** → **Discount.API** (gRPC)
 
-### 2️⃣ Service Panier 🛒
+### Communication Asynchrone
+- **Basket.API** → **RabbitMQ** → **Ordering.API**
+- Messages d'événements entre services
 
-**Ce qu'il fait :**
-- Permet d'ajouter des produits au panier
-- Calcule le total du panier
-- Modifie les quantités
-- Supprime des produits du panier
-- Applique les codes de réduction
+## 🏗️ Avantages de cette Architecture
 
-**Ses bases de données :**
-- **PostgreSQL** : pour sauvegarder les paniers
-- **Redis** : un cache super rapide pour accéder aux paniers en un instant
+### ✅ Indépendance des Services
+- Chaque microservice a sa propre base de données
+- Déploiement et scaling indépendants
+- Technologie adaptée par service
 
-**Communication :**
-- Parle avec le **Service Réductions** pour vérifier les codes promo
+### ✅ Résilience
+- Si un service tombe, les autres continuent
+- Messages asynchrones avec RabbitMQ
+- Pas de point de défaillance unique
 
----
+### ✅ Performance
+- Redis pour cache rapide des paniers
+- Bases de données optimisées par usage
+- Communication gRPC haute performance
 
-### 3️⃣ Service Réductions 🎟️
+## 🐳 Containerisation
 
-**Ce qu'il fait :**
-- Crée des codes de réduction (coupons)
-- Vérifie si un code promo est valide
-- Calcule la réduction à appliquer
+Tous les services sont containerisés avec Docker :
 
-**Sa base de données :** SQLite (une petite base de données simple)
-
----
-
-### 4️⃣ Service Commandes 📦
-
-**Ce qu'il fait :**
-- Crée une commande quand le client achète
-- Suit l'état de la commande (en cours, expédiée, livrée)
-- Garde l'historique de toutes les commandes
-- Gère les adresses de livraison
-
-**Sa base de données :** SQL Server (pour des données importantes et sécurisées)
-
----
-
-## 📨 Comment les Services Communiquent
-
-### Bus de Messages (RabbitMQ)
-
-C'est comme un facteur qui transporte des messages entre les services :
-
-**Exemple :**
-1. Le client valide son panier
-2. Le **Service Panier** envoie un message : "Un client veut commander !"
-3. Le **Service Commandes** reçoit le message et crée la commande
-4. Le **Service Commandes** envoie un nouveau message : "Commande créée !"
-5. D'autres services (comme les notifications) peuvent recevoir ce message
-
-**Avantage :** Si un service est occupé ou en panne, le message attend sagement qu'il soit disponible.
-
----
-
-## 🔐 Service d'Authentification
-
-**Ce qu'il fait :**
-- Vérifie l'identité des utilisateurs (connexion)
-- S'assure qu'un utilisateur a le droit de faire une action
-- Gère les comptes clients et administrateurs
-
----
-
-## 💾 Pourquoi Différentes Bases de Données ?
-
-Chaque service utilise la base de données la mieux adaptée à son travail :
-
-| Service | Base de données | Pourquoi ce choix |
-|---------|----------------|-------------------|
-| **Catalogue** | PostgreSQL | Beaucoup de produits à gérer, recherches complexes |
-| **Panier** | PostgreSQL + Redis | Redis = super rapide pour les paniers actifs |
-| **Réductions** | SQLite | Peu de données, simple à gérer |
-| **Commandes** | SQL Server | Données sensibles, transactions sécurisées |
-
----
-
-## 🔄 Comment Ça Marche Ensemble ?
-
-### Exemple : Un client achète un produit
-
-1. **Client** ouvre le site web
-2. **Site Web** → **Passerelle API** : "Montre-moi les produits"
-3. **Passerelle API** → **Service Catalogue** : "Donne-moi les produits"
-4. **Service Catalogue** → **Base PostgreSQL** : récupère les produits
-5. Les produits s'affichent au client ✅
-
-6. **Client** ajoute au panier
-7. **Site Web** → **Passerelle API** → **Service Panier** : "Ajoute ce produit"
-8. **Service Panier** → **Redis** : sauvegarde dans le cache rapide ✅
-
-9. **Client** applique un code promo "NOEL2025"
-10. **Service Panier** → **Service Réductions** : "Ce code est-il valide ?"
-11. **Service Réductions** répond : "Oui, -20% !" ✅
-
-12. **Client** valide sa commande
-13. **Service Panier** → **Bus de Messages** : "Nouveau panier à transformer en commande !"
-14. **Service Commandes** reçoit le message et crée la commande dans SQL Server ✅
-15. **Service Commandes** → **Bus de Messages** : "Commande créée, envoyez un email !" 📧
-
----
-
-## 🐳 Déploiement avec Docker
-
-Tous les services sont dans des conteneurs Docker (comme des boîtes isolées) :
-
-```
-📦 Conteneur 1 : Service Catalogue + PostgreSQL
-📦 Conteneur 2 : Service Panier + PostgreSQL + Redis
-📦 Conteneur 3 : Service Réductions + SQLite
-📦 Conteneur 4 : Service Commandes + SQL Server
-📦 Conteneur 5 : Passerelle API
-📦 Conteneur 6 : RabbitMQ (Bus de messages)
+```yaml
+services:
+  - catalog.api + postgresql
+  - basket.api + postgresql + redis  
+  - discount.api + sqlite
+  - ordering.api + sqlserver
+  - ocelot.api.gateway
+  - rabbitmq
 ```
 
-**Avantage :** On peut démarrer toute l'application avec une seule commande !
+## 📊 Technologies Utilisées
 
----
-
-## ✅ Points Clés à Retenir
-
-1. **Chaque service fait UNE chose** : Catalogue, Panier, Réductions, Commandes
-2. **Chaque service a SA base de données** : pas de partage
-3. **La Passerelle est la porte d'entrée** : tout passe par là
-4. **Les services communiquent de 2 façons :**
-   - **Directement** : pour des réponses immédiates
-   - **Par messages** : pour ne pas se bloquer mutuellement
-5. **Docker permet de tout lancer facilement** : un clic et tout démarre
+| Composant | Technologie |
+|-----------|-------------|
+| **API Gateway** | Ocelot |
+| **Microservices** | ASP.NET Core |
+| **Message Broker** | RabbitMQ |
+| **Bases de données** | MongoDB, PostgreSQL, Redis, SQLite, SQL Server |
+| **Containerisation** | Docker Compose |
 
